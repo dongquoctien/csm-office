@@ -98,7 +98,7 @@ function drawWallBorder(scene: Phaser.Scene, r: Rect): void {
   }
 }
 
-// ── Focal point: a small fountain (with optional gentle shimmer) ─────────────
+// ── Focal point: a fountain with a spouting water jet + falling droplets ─────
 function drawFountain(scene: Phaser.Scene, _r: Rect, at: { x: number; y: number }): void {
   const fx = at.x;
   const fy = at.y;
@@ -106,21 +106,85 @@ function drawFountain(scene: Phaser.Scene, _r: Rect, at: { x: number; y: number 
   // stone basin
   scene.add.ellipse(fx, fy, 60, 30, 0x8b8676, 1).setDepth(1);
   scene.add.ellipse(fx, fy, 50, 24, 0x6f6a5c, 1).setDepth(1.01);
-  // water
+  // water surface
   const water = scene.add.ellipse(fx, fy, 40, 18, 0x4a86c4, 1).setDepth(1.02);
   scene.add.ellipse(fx, fy - 1, 22, 9, 0x6ba3da, 1).setDepth(1.03);
-  // centre spout
-  scene.add.rectangle(fx, fy - 6, 4, 12, 0x8b8676, 1).setDepth(1.04);
-  if (!reduceMotion) {
-    scene.tweens.add({
-      targets: water,
-      scaleX: 1.08,
-      scaleY: 1.12,
-      duration: 1400,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.inOut',
-    });
+  // centre pedestal
+  scene.add.rectangle(fx, fy - 6, 5, 14, 0x8b8676, 1).setDepth(1.04);
+
+  if (reduceMotion) {
+    // static jet representation when motion is off.
+    scene.add.rectangle(fx, fy - 18, 4, 18, 0xbfe2f5, 0.85).setDepth(1.2);
+    return;
+  }
+
+  // gentle surface shimmer.
+  scene.tweens.add({
+    targets: water,
+    scaleX: 1.08,
+    scaleY: 1.12,
+    duration: 1400,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.inOut',
+  });
+
+  drawFountainJet(scene, fx, fy);
+}
+
+/** Vertical jet column + arcing droplets that fall back into the basin. */
+function drawFountainJet(scene: Phaser.Scene, fx: number, fy: number): void {
+  const topY = fy - 26; // jet apex above the pedestal
+  // The column: a thin tapered stream that pulses height.
+  const column = scene.add.ellipse(fx, fy - 14, 5, 26, 0xcdeafb, 0.85).setDepth(1.2);
+  scene.tweens.add({
+    targets: column,
+    scaleY: 1.18,
+    y: fy - 16,
+    duration: 700,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.inOut',
+  });
+  // a soft splash glow where the jet meets the surface.
+  const splash = scene.add.ellipse(fx, fy - 2, 16, 6, 0xeaf6ff, 0.5).setDepth(1.18);
+  scene.tweens.add({
+    targets: splash,
+    scaleX: 1.4,
+    alpha: 0.2,
+    duration: 700,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.inOut',
+  });
+
+  // Arcing droplets: spawn at the apex, fly out + fall into the basin, loop.
+  const DROPS = 8;
+  let seed = 13;
+  const rnd = (): number => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  for (let i = 0; i < DROPS; i++) {
+    const drop = scene.add.circle(fx, topY, 1.6, 0xbfe2f5, 0.95).setDepth(1.21);
+    const fly = (): void => {
+      const dir = rnd() < 0.5 ? -1 : 1;
+      const spread = 16 + rnd() * 16;
+      const dur = 850 + rnd() * 350;
+      drop.setPosition(fx, topY).setAlpha(0.95);
+      // horizontal drift out from the apex.
+      scene.tweens.add({ targets: drop, x: fx + dir * spread, duration: dur, ease: 'Linear' });
+      // parabola: up a touch then down into the basin (separate Y tween + fade).
+      scene.tweens.add({
+        targets: drop,
+        y: fy - 2,
+        duration: dur,
+        ease: 'Quad.in',
+        delay: i * 90,
+        onComplete: () => {
+          drop.setAlpha(0);
+          scene.time.delayedCall(120 + rnd() * 260, fly);
+        },
+      });
+    };
+    fly();
   }
 }
 
