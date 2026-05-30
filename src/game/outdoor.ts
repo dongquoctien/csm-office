@@ -243,32 +243,42 @@ function bench(scene: Phaser.Scene, x: number, y: number): void {
     .fillRect(x + 9, y + 4, 3, 5); // legs
 }
 
+// A tall garden lamp post, drawn here (the Kenney "city" frame was a wall tap,
+// not a lamp). Origin = the base at (x,y); the lantern head sits HEAD_H above it,
+// and the night glow is anchored exactly to that head so light + lamp align.
+const LAMP_HEAD_H = 38; // px from base to the lantern (the glow anchor)
+
 function lamp(scene: Phaser.Scene, x: number, y: number): void {
-  if (!hasCity(scene)) return;
-  scene.add.ellipse(x, y + 6, 14, 5, 0x000000, 0.22).setDepth(0.9 + y / 2000);
-  scene.add
-    .image(x, y, CITY_KEY, CITY.lampPost)
-    .setOrigin(0.5, 0.85)
-    .setScale(1.6)
-    .setDepth(1 + y / 2000);
+  const dep = 1 + y / 2000;
+  scene.add.ellipse(x, y + 4, 16, 6, 0x000000, 0.22).setDepth(dep - 0.05); // ground shadow
+  const g = scene.add.graphics().setDepth(dep);
+  const headY = y - LAMP_HEAD_H;
+  // pole (dark teal-grey) + a small base.
+  g.fillStyle(0x2f3a44, 1).fillRect(x - 2, headY + 6, 4, LAMP_HEAD_H - 6); // post
+  g.fillStyle(0x3a4751, 1).fillRect(x - 1, headY + 6, 1, LAMP_HEAD_H - 6); // post highlight (left)
+  g.fillStyle(0x2a333b, 1).fillRect(x - 5, y - 2, 10, 4); // base
+  // lantern housing at the top + the warm bulb pane.
+  g.fillStyle(0x3a4751, 1).fillRect(x - 5, headY - 5, 10, 4); // cap
+  g.fillStyle(0x2f3a44, 1).fillRect(x - 4, headY - 1, 8, 9); // frame
+  g.fillStyle(0xffe6a8, 1).fillRect(x - 3, headY, 6, 7); // glass / bulb (warm)
 
   // Night glow registered with the day/night cycle (fades in after dusk):
-  //   - a warm POOL of light cast on the ground at the lamp's base,
-  //   - a soft HALO around the bulb, and a bright bulb CORE.
-  // Glows sit at depth 82 (above the day/night tint) so they punch through the
-  // dark. Created with fillAlpha 1 (isFilled=true); dayNight drives the alpha.
+  //   POOL on the ground · HALO around the lantern · bright bulb CORE — all
+  //   anchored to the lantern head so the light matches the lamp, not floating.
+  // Created at fillAlpha 1 (isFilled=true); dayNight drives the alpha. Depth 82
+  // is above the tint so the lamp punches through the dark.
   const LIGHT_DEPTH = 82;
-  const bulbY = y - 34; // lamp head sits well above the base
+  const bulbY = headY + 3; // centre of the glass pane
   const pool = scene.add
-    .ellipse(x, y + 4, 70, 30, 0xffd9a0, 1)
+    .ellipse(x, y + 2, 72, 30, 0xffd9a0, 1)
     .setBlendMode(Phaser.BlendModes.ADD)
     .setDepth(LIGHT_DEPTH);
   const halo = scene.add
-    .ellipse(x, bulbY, 34, 34, 0xffe6b0, 1)
+    .ellipse(x, bulbY, 30, 30, 0xffe6b0, 1)
     .setBlendMode(Phaser.BlendModes.ADD)
     .setDepth(LIGHT_DEPTH);
   const core = scene.add
-    .ellipse(x, bulbY, 9, 9, 0xfff4d0, 1)
+    .ellipse(x, bulbY, 9, 11, 0xfff4d0, 1)
     .setBlendMode(Phaser.BlendModes.ADD)
     .setDepth(LIGHT_DEPTH + 0.01);
   registerNightLight(pool, 0xffd9a0, 0.5);
