@@ -1,21 +1,24 @@
 /**
- * Activity → zone mapping (PLAN.md "Mapping 9→3 zones"). Pure: no Phaser/DOM.
+ * Activity → zone mapping (PLAN.md "Mapping 9→3 zones", extended to 4). Pure:
+ * no Phaser/DOM.
  *
- * The 3 art-target zones group the 9 csm activities by *what the work is*. Each
+ * The art-target zones group the 9 csm activities by *what the work is*. Each
  * zone keeps per-activity sub-spots, so the raw activity is still exact — we
  * group spatially, not semantically.
  *
- *   A — Coding (wood):          writing, running, searching
- *   C — Meeting/Reading (blue): reading, browsing, thinking, spawning
- *   B — Kitchen/Break (tile):   idle, waiting
+ *   Coding (wood):        writing, running, searching
+ *   Read (library):       reading                       — shelves + reading nook
+ *   Meeting (blue):       browsing, thinking, spawning  — table + Boss
+ *   Kitchen/Break (tile): idle, waiting
  */
 import type { Activity } from '../api/types';
 
-export type ZoneId = 'coding' | 'meeting' | 'kitchen';
+export type ZoneId = 'coding' | 'read' | 'meeting' | 'kitchen';
 
 export const ZONE_LABEL: Record<ZoneId, string> = {
   coding: 'Coding',
-  meeting: 'Meeting / Reading',
+  read: 'Reading',
+  meeting: 'Meeting',
   kitchen: 'Kitchen / Break',
 };
 
@@ -23,7 +26,7 @@ const ACTIVITY_ZONE: Record<Activity, ZoneId> = {
   writing: 'coding',
   running: 'coding',
   searching: 'coding',
-  reading: 'meeting',
+  reading: 'read',
   browsing: 'meeting',
   thinking: 'meeting',
   spawning: 'meeting',
@@ -51,6 +54,7 @@ export function zoneFor(activity: Activity): ZoneId {
 /** Activities that share a zone, in display order — used to lay out sub-spots. */
 export const ZONE_ACTIVITIES: Record<ZoneId, Activity[]> = {
   coding: ['writing', 'running', 'searching'],
-  meeting: ['reading', 'browsing', 'thinking', 'spawning'],
+  read: ['reading'],
+  meeting: ['browsing', 'thinking', 'spawning'],
   kitchen: ['idle', 'waiting'],
 };

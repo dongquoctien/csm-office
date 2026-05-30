@@ -15,10 +15,11 @@ const reduceMotion =
   window.matchMedia &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const W = 26;
-const H = 16;
-const ROWS = 3;
-const COLS = 10;
+// Sized to fit inside the monitor's display rectangle (≈24×20px at scale 2).
+const W = 20;
+const H = 14;
+const ROWS = 2;
+const COLS = 6;
 
 interface Screen {
   panel: Phaser.GameObjects.Rectangle;
@@ -51,12 +52,14 @@ export class ScreenLayer {
       .setStrokeStyle(1, 0x1c2b22, 1)
       .setDepth(depth - 0.01);
     const text = this.scene.add
-      .text(x - W / 2 + 2, y - H / 2 + 1, '', {
+      .text(x, y, '', {
         fontFamily: 'monospace',
-        fontSize: '6px',
+        fontSize: '5px',
         color: '#39ff77',
-        lineSpacing: 1,
+        lineSpacing: 0,
+        align: 'center',
       })
+      .setOrigin(0.5, 0.5) // centred in the monitor screen
       .setDepth(depth);
     panel.setVisible(false);
     text.setVisible(false);

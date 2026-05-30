@@ -16,6 +16,7 @@ import type { Activity } from '../api/types';
 import type { Point } from './routing';
 import { WALK_LEG_MAX_MS, WALK_LEG_MIN_MS, WALK_SPEED_PX_PER_MS } from '../config';
 import { charFrameFor, CHARS_KEY, hasChars } from './assets';
+import { ensurePixelProp } from './pixelProps';
 
 const W = 22;
 const H = 30;
@@ -49,6 +50,9 @@ export class AgentSprite {
   private finalFacing?: 'up' | 'down' | 'left' | 'right';
   private bobTween?: Phaser.Tweens.Tween;
   private bobBaseY = this.sprite ? -2 : 0;
+  private statusIcon?: Phaser.GameObjects.Image;
+  private statusTween?: Phaser.Tweens.Tween;
+  private statusKind?: 'search' | 'read';
 
   constructor(scene: Phaser.Scene, id: string, look: Look, name: string, activity: Activity) {
     this.scene = scene;
@@ -124,6 +128,63 @@ export class AgentSprite {
 
   setActivity(activity: Activity): void {
     this.activity = activity;
+    // Overhead status icon for the search/read activities (research §5).
+    if (activity === 'searching') this.showStatusIcon('search');
+    else if (activity === 'reading') this.showStatusIcon('read');
+    else this.clearStatusIcon();
+  }
+
+  /**
+   * Show a small icon above the head: a magnifier while searching (bobs as if
+   * scanning), an open book while reading (gentle settle). Reduced-motion → the
+   * static icon with no tween. Idempotent per kind.
+   */
+  private showStatusIcon(kind: 'search' | 'read'): void {
+    if (this.statusKind === kind && this.statusIcon) return;
+    this.clearStatusIcon();
+    this.statusKind = kind;
+    const key = ensurePixelProp(this.scene, kind === 'search' ? 'iconSearch' : 'iconBook');
+    if (!key) return;
+    // Offset to the head's upper-RIGHT so it stays visible even with a speech
+    // bubble (which is centred above the head).
+    const iconX = 14;
+    const iconY = -H / 2 - 6;
+    this.statusIcon = this.scene.add
+      .image(iconX, iconY, key)
+      .setOrigin(0.5, 0.5)
+      .setScale(1.4)
+      .setDepth(6);
+    this.container.add(this.statusIcon);
+    if (prefersReducedMotion) return;
+    if (kind === 'search') {
+      // bob up/down as if scanning the shelf.
+      this.statusTween = this.scene.tweens.add({
+        targets: this.statusIcon,
+        y: iconY - 3,
+        duration: 420,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.inOut',
+      });
+    } else {
+      // a slow page-turn shimmer (fake flip via scaleX) around the base scale.
+      this.statusTween = this.scene.tweens.add({
+        targets: this.statusIcon,
+        scaleX: { from: 1.4, to: 1.15 },
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.inOut',
+      });
+    }
+  }
+
+  private clearStatusIcon(): void {
+    this.statusTween?.stop();
+    this.statusTween = undefined;
+    this.statusIcon?.destroy();
+    this.statusIcon = undefined;
+    this.statusKind = undefined;
   }
 
   setActive(active: boolean): void {
@@ -260,6 +321,7 @@ export class AgentSprite {
 
   destroy(): void {
     this.stopBob();
+    this.clearStatusIcon();
     this.container.destroy(true);
   }
 }

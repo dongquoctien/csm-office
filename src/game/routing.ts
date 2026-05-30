@@ -8,7 +8,7 @@
  * between left and right (x ≈ CORRIDOR_X). All cross-zone travel routes via each
  * zone's door, then the corridor.
  */
-import { WORLD_H } from './zones';
+import { WORLD_H, CORRIDOR_CX } from './zones';
 import { ZONES, type Zone } from './zones';
 import type { ZoneId } from '../store/zoneMap';
 
@@ -16,9 +16,6 @@ export interface Point {
   x: number;
   y: number;
 }
-
-/** x of the vertical corridor between the left (coding) and right column. */
-const CORRIDOR_X = 724;
 
 /**
  * Path from a current position in `fromZone` to `target` slot in `toZone`.
@@ -37,10 +34,10 @@ export function routeTo(fromZone: ZoneId, toZone: ZoneId, _from: Point, target: 
 
   // 1) walk to our own door.
   pts.push({ x: a.door.x, y: a.door.y });
-  // 2) step into the corridor at our door height.
-  pts.push({ x: CORRIDOR_X, y: clampY(a.door.y) });
-  // 3) travel along the corridor to the target door height.
-  pts.push({ x: CORRIDOR_X, y: clampY(b.door.y) });
+  // 2) step into the hallway at our door height.
+  pts.push({ x: CORRIDOR_CX, y: clampY(a.door.y) });
+  // 3) travel along the hallway to the target door height.
+  pts.push({ x: CORRIDOR_CX, y: clampY(b.door.y) });
   // 4) in through the target door.
   pts.push({ x: b.door.x, y: b.door.y });
   // 5) square off to the slot (move vertically first, then to the slot).

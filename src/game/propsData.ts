@@ -81,6 +81,14 @@ export const PROPS = {
   tableSmall: 0,
   tableRound: 4,
   tableLong: 166,
+  sideTable: 4, // small round side table for nooks (distinct from cabinet)
+  // lounge seating (decor clusters)
+  armchair: 110, // armchair (faces near side)
+  sofa: 243, // upholstered orange sofa (verified — 216 was a fridge)
+  // bookshelves (free-standing stacks on the floor; pixel prop preferred)
+  bookshelf: 54,
+  bookshelf2: 54,
+  bookshelf3: 54,
   // wall-anchored storage / appliances
   cabinet: 54,
   counter: 356,
@@ -100,6 +108,14 @@ export const PROPS = {
 } as const;
 
 export type PropName = keyof typeof PROPS;
+
+/**
+ * INDOOR sheet is 27 columns wide. Some furniture is 2 tiles TALL (the desk
+ * monitors: the listed frame is the lower half; the upper half is `frame - 27`).
+ * These props must draw their top tile one tile above, or they look "cut off".
+ */
+export const INDOOR_COLS = 27;
+export const TALL_PROPS = new Set<PropName>(['deskItems', 'deskItems2', 'deskItems3']);
 
 /** Named prop frames in the RPG sheet (wall-mounted decor). */
 export const RPG_PROPS = {

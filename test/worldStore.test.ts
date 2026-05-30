@@ -24,7 +24,7 @@ describe('worldStore.applySnapshot', () => {
     const world = applySnapshot(snapshot, NOW);
     expect(world.agents.get('sess-writing-1')?.zone).toBe('coding');
     expect(world.agents.get('sess-running-1')?.zone).toBe('coding');
-    expect(world.agents.get('sess-reading-1')?.zone).toBe('meeting');
+    expect(world.agents.get('sess-reading-1')?.zone).toBe('read');
     expect(world.agents.get('sess-thinking-1')?.zone).toBe('meeting');
     expect(world.agents.get('sess-idle-1')?.zone).toBe('kitchen');
     expect(world.agents.get('sess-waiting-1')?.zone).toBe('kitchen');

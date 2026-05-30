@@ -7,6 +7,7 @@ import { ZONE_LABEL, type ZoneId } from '../store/zoneMap';
 
 const ZONE_COLOR: Record<ZoneId, string> = {
   coding: '#9b6a3f',
+  read: '#c2885a',
   kitchen: '#cdbb8e',
   meeting: '#5b8def',
 };
