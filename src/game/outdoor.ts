@@ -12,7 +12,8 @@
 import Phaser from 'phaser';
 import { OUTDOOR, type Rect } from './zones';
 import { CITY, CITY_KEY, hasCity } from './assets';
-import { registerNightLight, resetNightLights } from './nightLights';
+import { registerNightLight, resetNightLights, onNightChange } from './nightLights';
+import { addSoftLight } from './softLight';
 
 const reduceMotion =
   typeof window !== 'undefined' &&
@@ -38,10 +39,14 @@ export function createOutdoor(scene: Phaser.Scene): void {
   drawTreesAndProps(scene, r);
   drawSakura(scene, r); // pink cherry-blossom trees
   scatterFlowers(scene, r);
+  // Pet houses sit side-by-side along the upper-right grass (same row).
+  const homeY = r.y + r.h * 0.26;
+  const catHome = petHouse(scene, r.x + r.w * 0.66, homeY, 0x6f7a86, 'CAT'); // grey
+  const dogHome = petHouse(scene, r.x + r.w * 0.86, homeY, 0xb5683c, 'DOG'); // terracotta
   if (!reduceMotion) {
     spawnPetals(scene, r); // blossom petals drifting on the wind
-    const cat = spawnCat(scene, r); // a black cat that hops around the park
-    spawnDog(scene, r, cat); // a brown dog that plays/chases near the cat
+    const cat = spawnCat(scene, r, catHome); // a black cat that hops around the park
+    spawnDog(scene, r, cat, dogHome); // a brown dog that plays/chases near the cat
   }
 }
 
@@ -262,28 +267,18 @@ function lamp(scene: Phaser.Scene, x: number, y: number): void {
   g.fillStyle(0x2f3a44, 1).fillRect(x - 4, headY - 1, 8, 9); // frame
   g.fillStyle(0xffe6a8, 1).fillRect(x - 3, headY, 6, 7); // glass / bulb (warm)
 
-  // Night glow registered with the day/night cycle (fades in after dusk):
-  //   POOL on the ground · HALO around the lantern · bright bulb CORE — all
-  //   anchored to the lantern head so the light matches the lamp, not floating.
-  // Created at fillAlpha 1 (isFilled=true); dayNight drives the alpha. Depth 82
-  // is above the tint so the lamp punches through the dark.
+  // Night glow registered with the day/night cycle. The bulb HALO uses the baked
+  // radial gradient (soft feather suits a round bulb); the ground POOL stays a
+  // plain faint ellipse (a gradient circle on the grass looked off). Depth 82 =
+  // above the tint so the lamp punches through the dark.
   const LIGHT_DEPTH = 82;
   const bulbY = headY + 3; // centre of the glass pane
+  registerNightLight(addSoftLight(scene, x, bulbY, 84, 0xffe6a8, LIGHT_DEPTH)); // soft bulb halo
   const pool = scene.add
-    .ellipse(x, y + 2, 72, 30, 0xffd9a0, 1)
+    .ellipse(x, y + 2, 80, 32, 0xffd9a0, 1)
     .setBlendMode(Phaser.BlendModes.ADD)
-    .setDepth(LIGHT_DEPTH);
-  const halo = scene.add
-    .ellipse(x, bulbY, 30, 30, 0xffe6b0, 1)
-    .setBlendMode(Phaser.BlendModes.ADD)
-    .setDepth(LIGHT_DEPTH);
-  const core = scene.add
-    .ellipse(x, bulbY, 9, 11, 0xfff4d0, 1)
-    .setBlendMode(Phaser.BlendModes.ADD)
-    .setDepth(LIGHT_DEPTH + 0.01);
-  registerNightLight(pool, 0xffd9a0, 0.5);
-  registerNightLight(halo, 0xffe6b0, 0.6);
-  registerNightLight(core, 0xfff4d0, 0.9);
+    .setDepth(LIGHT_DEPTH - 0.02);
+  registerNightLight({ setIntensity: (k) => pool.setFillStyle(0xffd9a0, 0.4 * k) });
 }
 
 // ── Cherry-blossom (sakura) trees — pink canopy, a soft accent ───────────────
@@ -337,8 +332,84 @@ function spawnPetals(scene: Phaser.Scene, r: Rect): void {
   }
 }
 
+// ── Pet house (a small kennel/cat house) + its sleep-Zzz position ────────────
+interface PetHome {
+  x: number; // doorway / where the pet walks to
+  y: number;
+  roofX: number; // where the Zzz floats up from (above the roof)
+  roofY: number;
+}
+function petHouse(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  roofColor: number,
+  label: string,
+): PetHome {
+  const dep = 1 + y / 2000;
+  scene.add.ellipse(x, y + 6, 40, 12, 0x000000, 0.22).setDepth(dep - 0.05); // shadow
+  const g = scene.add.graphics().setDepth(dep);
+  // body (wood) + dark round doorway + a pitched roof in the pet's colour.
+  g.fillStyle(0x9a6a3a, 1).fillRect(x - 16, y - 14, 32, 14); // body
+  g.fillStyle(0x82572d, 1).fillRect(x - 16, y - 2, 32, 2); // body base shade
+  g.fillStyle(0x1c140e, 1).fillEllipse(x, y - 4, 14, 16); // doorway hole
+  g.fillStyle(roofColor, 1).fillTriangle(x - 20, y - 13, x + 20, y - 13, x, y - 28); // roof
+  g.fillStyle(hueDark(roofColor), 1).fillTriangle(x + 2, y - 14, x + 20, y - 13, x, y - 28); // roof shade (right)
+
+  // a little name plaque ("CAT" / "DOG") above the roof on a short post.
+  const plaqueY = y - 38;
+  g.fillStyle(0x5a3d22, 1).fillRect(x - 1, y - 30, 2, plaqueY - (y - 30) + 6); // post
+  g.fillStyle(0xf4ead2, 1).fillRoundedRect(x - 13, plaqueY - 7, 26, 13, 2); // board
+  g.fillStyle(0xcdbb8e, 1).fillRect(x - 13, plaqueY + 4, 26, 2); // board base shade
+  scene.add
+    .text(x, plaqueY, label, {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      fontStyle: 'bold',
+      color: '#5a3d22',
+    })
+    .setOrigin(0.5, 0.5)
+    .setDepth(dep + 0.02);
+
+  return { x, y: y + 2, roofX: x, roofY: y - 52 }; // Zzz floats above the plaque
+}
+
+/** A "Z z Z" sleep wisp that rises + fades above a point, looping. Hidden until shown. */
+function makeZzz(scene: Phaser.Scene, x: number, y: number): Phaser.GameObjects.Container {
+  const c = scene.add.container(x, y).setDepth(3).setVisible(false);
+  const letters = ['Z', 'z', 'Z'].map((ch, i) =>
+    scene.add
+      .text(i * 6, -i * 7, ch, {
+        fontFamily: 'monospace',
+        fontSize: `${10 + i * 2}px`,
+        color: '#e8e2d2',
+      })
+      .setOrigin(0.5, 1)
+      .setAlpha(0),
+  );
+  letters.forEach((t) => c.add(t));
+  const float = (): void => {
+    letters.forEach((t, i) => {
+      t.setPosition(i * 6, -i * 7).setAlpha(0);
+      scene.tweens.add({
+        targets: t,
+        y: -i * 7 - 16,
+        alpha: { from: 0, to: 0.95 },
+        duration: 900,
+        delay: i * 260,
+        ease: 'Sine.out',
+        yoyo: true,
+        hold: 200,
+      });
+    });
+    if (c.visible) scene.time.delayedCall(1600, float);
+  };
+  c.setData('startFloat', float);
+  return c;
+}
+
 // ── One black cat that hops around the park (single, charming, not a crowd) ──
-function spawnCat(scene: Phaser.Scene, r: Rect): Phaser.GameObjects.Container {
+function spawnCat(scene: Phaser.Scene, r: Rect, home: PetHome): Phaser.GameObjects.Container {
   const cat = scene.add.container(0, 0).setDepth(2);
   const g = scene.add.graphics();
   // simple top-down black cat: body, head, ears, tail, green eyes.
@@ -352,12 +423,13 @@ function spawnCat(scene: Phaser.Scene, r: Rect): Phaser.GameObjects.Container {
 
   let seed = 91;
   const rnd = (): number => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  let asleep = false;
   const hop = (): void => {
+    if (asleep) return;
     // pick a nearby target on the grass (avoid the road band loosely).
     const tx = r.x + 30 + rnd() * (r.w * 0.6);
     const ty = r.y + 30 + rnd() * (r.h - 70);
     cat.scaleX = tx < cat.x ? -1 : 1; // face travel direction
-    // a little hop: move + arc up via a brief scale/!y bounce.
     scene.tweens.add({
       targets: cat,
       x: tx,
@@ -366,23 +438,29 @@ function spawnCat(scene: Phaser.Scene, r: Rect): Phaser.GameObjects.Container {
       ease: 'Sine.inOut',
       onComplete: () => scene.time.delayedCall(700 + rnd() * 1800, hop),
     });
-    // bounce (hop arc) on the graphics child.
-    scene.tweens.add({
-      targets: g,
-      y: -6,
-      duration: 300,
-      yoyo: true,
-      ease: 'Quad.out',
-    });
+    scene.tweens.add({ targets: g, y: -6, duration: 300, yoyo: true, ease: 'Quad.out' });
   };
   cat.setPosition(r.x + r.w * 0.3, r.y + r.h * 0.7);
   scene.time.delayedCall(1500, hop);
+  attachSleep(
+    scene,
+    cat,
+    home,
+    () => asleep,
+    (v) => (asleep = v),
+    hop,
+  );
   return cat;
 }
 
 // ── A brown dog that romps near the cat — they "play" (the dog trots toward the
 //    cat, the cat keeps hopping away). Same hop-arc style as the cat.
-function spawnDog(scene: Phaser.Scene, r: Rect, cat: Phaser.GameObjects.Container): void {
+function spawnDog(
+  scene: Phaser.Scene,
+  r: Rect,
+  cat: Phaser.GameObjects.Container,
+  home: PetHome,
+): void {
   const dog = scene.add.container(0, 0).setDepth(2);
   const g = scene.add.graphics();
   // simple top-down brown dog: longer body, head with snout, floppy ears, tail.
@@ -397,7 +475,9 @@ function spawnDog(scene: Phaser.Scene, r: Rect, cat: Phaser.GameObjects.Containe
 
   let seed = 53;
   const rnd = (): number => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  let asleep = false;
   const romp = (): void => {
+    if (asleep) return;
     // aim a bit OFFSET from the cat so the dog circles/chases rather than overlaps.
     const off = 34 + rnd() * 24;
     const side = rnd() < 0.5 ? -1 : 1;
@@ -412,11 +492,71 @@ function spawnDog(scene: Phaser.Scene, r: Rect, cat: Phaser.GameObjects.Containe
       ease: 'Sine.inOut',
       onComplete: () => scene.time.delayedCall(500 + rnd() * 1400, romp),
     });
-    // trot bounce.
     scene.tweens.add({ targets: g, y: -5, duration: 260, yoyo: true, ease: 'Quad.out' });
   };
   dog.setPosition(r.x + r.w * 0.42, r.y + r.h * 0.66);
   scene.time.delayedCall(2200, romp);
+  attachSleep(
+    scene,
+    dog,
+    home,
+    () => asleep,
+    (v) => (asleep = v),
+    romp,
+  );
+}
+
+/**
+ * Wire a pet to the night cycle: at NIGHT it walks home, hides, and a "Z z Z"
+ * wisp floats over the roof; by DAY it reappears at the house and resumes its
+ * wander loop. Debounced on a night threshold so dusk/dawn flip it once.
+ */
+function attachSleep(
+  scene: Phaser.Scene,
+  pet: Phaser.GameObjects.Container,
+  home: PetHome,
+  getAsleep: () => boolean,
+  setAsleep: (v: boolean) => void,
+  resumeLoop: () => void,
+): void {
+  const zzz = makeZzz(scene, home.roofX, home.roofY);
+  const goToSleep = (): void => {
+    if (getAsleep()) return;
+    setAsleep(true);
+    // walk to the house, then tuck inside (hide) and start the Zzz.
+    scene.tweens.add({
+      targets: pet,
+      x: home.x,
+      y: home.y,
+      duration: 900,
+      ease: 'Sine.inOut',
+      onComplete: () => {
+        if (!getAsleep()) return; // woke mid-walk
+        pet.setVisible(false);
+        zzz.setVisible(true);
+        (zzz.getData('startFloat') as () => void)();
+      },
+    });
+  };
+  const wakeUp = (): void => {
+    if (!getAsleep()) return;
+    setAsleep(false);
+    zzz.setVisible(false);
+    pet.setPosition(home.x, home.y).setVisible(true);
+    resumeLoop();
+  };
+  onNightChange((night) => {
+    if (night > 0.8 && !getAsleep()) goToSleep();
+    else if (night < 0.4 && getAsleep()) wakeUp();
+  });
+}
+
+/** Darken a hex color ~25% (for roof shade). */
+function hueDark(hex: number): number {
+  const r = ((hex >> 16) & 0xff) * 0.75;
+  const g = ((hex >> 8) & 0xff) * 0.75;
+  const b = (hex & 0xff) * 0.75;
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
 }
 
 // ── Sparse flower clusters (semi-random, not uniform) ────────────────────────

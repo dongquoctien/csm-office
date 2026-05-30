@@ -13,7 +13,7 @@
  */
 import Phaser from 'phaser';
 import { ALL_ZONES, OUTDOOR, WORLD_W, WORLD_H, type Rect } from './zones';
-import { nightLights } from './nightLights';
+import { nightLights, setNightFactor } from './nightLights';
 
 const reduceMotion =
   typeof window !== 'undefined' &&
@@ -86,11 +86,6 @@ function sample(t: number): { outdoor: Layer; interior: Layer; night: number } {
   return { outdoor: DAY, interior: DAY, night: 0 };
 }
 
-interface LightBlob {
-  obj: Phaser.GameObjects.Ellipse;
-  baseAlpha: number;
-}
-
 export function createDayNight(scene: Phaser.Scene): void {
   // ── ambient tint layers (NORMAL blend, color + alpha) ──────────────────────
   // Initialise with fillAlpha=1 so the Rectangle's `isFilled` flag is true, then
@@ -107,30 +102,29 @@ export function createDayNight(scene: Phaser.Scene): void {
     .setOrigin(0, 0)
     .setDepth(TINT_DEPTH - 0.1);
 
-  // ── night light blobs (ADD, ABOVE the tint) — fade in with the night factor ─
-  const lights: LightBlob[] = [];
-  const addLight = (x: number, y: number, w: number, h: number, color: number, a: number): void => {
-    const e = scene.add
-      .ellipse(x, y, w, h, color, 1)
+  // ── night lights (ADD, ABOVE the tint) — fade in with the night factor ──────
+  // Room glow = a broad faint ELLIPSE matching the rectangular room (a radial
+  // gradient looked like an odd round spot in a rectangle). Created fillAlpha 1
+  // (isFilled=true); apply() drives the alpha.
+  const roomGlows = ALL_ZONES.map((z) => {
+    const inr: Rect = z.inner;
+    return scene.add
+      .ellipse(inr.x + inr.w / 2, inr.y + inr.h / 2, inr.w * 0.92, inr.h * 0.72, 0xffe6b0, 1)
       .setBlendMode(Phaser.BlendModes.ADD)
       .setDepth(LIGHT_DEPTH);
-    lights.push({ obj: e, baseAlpha: a });
-  };
-  // a warm window/lamp glow per office room (lit interior seen at night).
-  for (const z of ALL_ZONES) {
-    const inr: Rect = z.inner;
-    addLight(inr.x + inr.w / 2, inr.y + inr.h / 2, inr.w * 0.9, inr.h * 0.7, 0xffe6b0, 0.12);
-  }
-  // (The PARK lamp posts register their own glows in outdoor.ts, already placed
-  // above the tint so they punch through the night darkness like real lamps.)
+  });
+  const ROOM_GLOW_A = 0.12;
+  // (The PARK lamp posts register their own glows in outdoor.ts, already above
+  // the tint so they punch through the night darkness like real lamps.)
 
   const apply = (t: number): void => {
     const s = sample(t);
     // fillAlpha (2nd arg) is the channel that actually tints; isFilled stays true.
     outdoorTint.setFillStyle(s.outdoor.c, s.outdoor.a);
     interiorTint.setFillStyle(s.interior.c, s.interior.a);
-    for (const l of lights) l.obj.setFillStyle(l.obj.fillColor, l.baseAlpha * s.night);
-    for (const nl of nightLights()) nl.obj.setFillStyle?.(nl.color, nl.baseAlpha * s.night);
+    for (const rg of roomGlows) rg.setFillStyle(0xffe6b0, ROOM_GLOW_A * s.night);
+    for (const nl of nightLights()) nl.setIntensity(s.night);
+    setNightFactor(s.night); // broadcast so the pets know to go home / wake up
   };
 
   if (reduceMotion) {

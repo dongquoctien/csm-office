@@ -10,7 +10,9 @@ characters walk between rooms as activity changes, speech bubbles show recent
 messages. It is a **read-only viewer** — it consumes csm's `/api/stream` (SSE)
 and does **not** parse `~/.claude` logs itself.
 
-![csm-office screenshot](docs/screenshot.png)
+| Day | Night |
+|---|---|
+| ![csm-office by day](docs/screenshot.png) | ![csm-office by night](docs/screenshot-night.png) |
 
 ## How it works
 
@@ -27,10 +29,11 @@ csm agent /api/stream ──proxy(token injected)──► SSE client ──► 
   - **Meeting** (blue) — `browsing`, `thinking`, `spawning`
   - **Kitchen / Break** (tile) — `idle`, `waiting`
 - The bottom-left is an ambient **outdoor park** (fountain, trees, a cat and a
-  dog romping together) — atmosphere only, no agents.
+  dog romping together, each with its own little house) — atmosphere only.
 - A slow **day/night cycle** (~6 min loop) tints the whole scene: the park goes
   deep indigo at night while the office stays warmer with its lights on (glowing
-  windows + lamp pools). Honors `prefers-reduced-motion` (picks a fixed phase).
+  windows + lamp pools). At night the pets trot home and sleep with a "Z z Z"
+  wisp over the roof. Honors `prefers-reduced-motion` (picks a fixed phase).
 - Only agents that are active or touched in the last 30 min are shown; when a
   room's seats fill up, extra agents fan out instead of stacking.
 - Avatar appearance is deterministic per session id (stable across reconnects).
