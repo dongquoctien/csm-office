@@ -17,6 +17,7 @@ export default [
         MessageEvent: 'readonly',
         HTMLElement: 'readonly',
         HTMLInputElement: 'readonly',
+        CanvasImageSource: 'readonly',
         URLSearchParams: 'readonly',
         localStorage: 'readonly',
         console: 'readonly',

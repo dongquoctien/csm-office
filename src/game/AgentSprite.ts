@@ -46,6 +46,7 @@ export class AgentSprite {
 
   private queue: Point[] = [];
   private walking = false;
+  private finalFacing?: 'up' | 'down' | 'left' | 'right';
   private bobTween?: Phaser.Tweens.Tween;
   private bobBaseY = this.sprite ? -2 : 0;
 
@@ -153,17 +154,33 @@ export class AgentSprite {
     if (this.gfx) this.gfx.y = this.bobBaseY;
   }
 
+  /** Face a direction (flip left/right; up/down keep facing). */
+  face(facing: 'up' | 'down' | 'left' | 'right'): void {
+    if (!this.gfx) return;
+    const mag = Math.abs(this.gfx.scaleX) || 1;
+    if (facing === 'left') this.gfx.scaleX = -mag;
+    else if (facing === 'right') this.gfx.scaleX = mag;
+  }
+
+  /** Depth that y-sorts the agent among furniture (matches OfficeScene base). */
+  private syncDepth(): void {
+    this.container.setDepth(10 + this.container.y / 720 + 0.5);
+  }
+
   /** Instant placement (initial spawn). */
   placeAt(x: number, y: number): void {
     this.container.setPosition(x, y);
+    this.syncDepth();
   }
 
   /** Queue a walk along waypoints; legs run sequentially (PLAN.md §4.5). */
-  walkPath(points: Point[]): void {
+  walkPath(points: Point[], finalFacing?: 'up' | 'down' | 'left' | 'right'): void {
     if (points.length === 0) return;
+    this.finalFacing = finalFacing;
     if (prefersReducedMotion) {
       const last = points[points.length - 1];
       this.placeAt(last.x, last.y);
+      if (finalFacing) this.face(finalFacing);
       return;
     }
     this.queue = points.slice();
@@ -174,6 +191,7 @@ export class AgentSprite {
     const next = this.queue.shift();
     if (!next) {
       this.walking = false;
+      if (this.finalFacing) this.face(this.finalFacing);
       return;
     }
     this.walking = true;
@@ -193,6 +211,7 @@ export class AgentSprite {
       y: next.y,
       duration: dur,
       ease: 'Linear',
+      onUpdate: () => this.syncDepth(),
       onComplete: () => this.stepNext(),
     });
   }

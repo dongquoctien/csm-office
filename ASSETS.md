@@ -13,12 +13,21 @@ licensing rules for adding new ones.
   dressed character frames is picked deterministically per session id
   (`CHAR_FRAMES` in `src/game/assets.ts`). Falls back to a drawn figure if the
   sheet is missing.
-- **Floors:** procedurally generated wood-planks / tile-grout in
-  `src/game/assets.ts` — no art file needed.
+- **Floors:** Kenney **"Roguelike/RPG pack"** (CC0) — vendored as
+  `public/assets/rpg.png` (16px, 1px spacing, 57-col grid). Seamless indoor
+  floor tiles (wood parquet / tile / stone) extracted per zone via
+  `FLOOR_FRAME` in `src/game/assets.ts`. Falls back to procedural floors if
+  the sheet is missing.
+- **Outdoor street:** Kenney **"Roguelike: Modern City"** (CC0) — vendored as
+  `public/assets/city.png` (16px, packed/no-spacing, 37-col grid). Road + car
+  frames (`CITY` in `propsData.ts`) for the ambient outdoor street
+  (`src/game/outdoor.ts`). Grass + trees are drawn procedurally.
 
 CC0 = no attribution required; we credit Kenney voluntarily. Sources:
-https://kenney.nl/assets/roguelike-indoors and
-https://kenney.nl/assets/roguelike-characters (both CC0 1.0 Universal).
+https://kenney.nl/assets/roguelike-indoors ,
+https://kenney.nl/assets/roguelike-characters ,
+https://kenney.nl/assets/roguelike-rpg-pack , and
+https://kenney.nl/assets/roguelike-modern-city (all CC0 1.0 Universal).
 
 ## Rules for adding assets
 
@@ -52,4 +61,4 @@ Filling a path is all that's needed to use a real asset.
 |---|---|---|---|
 | `PROPS.*` (furniture) | `public/assets/indoor.png` | Kenney Roguelike Indoors | CC0 |
 | `CHAR_FRAMES` (avatars) | `public/assets/chars.png` | Kenney Roguelike Characters | CC0 |
-| floors (wood/tile/blue) | _(procedural)_ | — | — |
+| `FLOOR_FRAME` (floors) | `public/assets/rpg.png` | Kenney Roguelike/RPG pack | CC0 |
