@@ -53,9 +53,9 @@ describe('diffWorlds', () => {
 
   it('emits moveRoom when the zone changes', () => {
     const prev = worldOf({ id: 'a', activity: 'writing', active: true, mtime: NOW }); // coding
-    const next = worldOf({ id: 'a', activity: 'reading', active: true, mtime: NOW }); // meeting
+    const next = worldOf({ id: 'a', activity: 'reading', active: true, mtime: NOW }); // read
     const intents = findById(diffWorlds(prev, next), 'a');
-    expect(intents[0]).toMatchObject({ kind: 'moveRoom', zone: 'meeting' });
+    expect(intents[0]).toMatchObject({ kind: 'moveRoom', zone: 'read' });
   });
 
   it('emits activity (not moveRoom) when activity changes within the same zone', () => {

@@ -12,7 +12,9 @@ licensing rules for adding new ones.
   `public/assets/chars.png` (16px, 1px spacing, 54-col grid). A curated set of
   dressed character frames is picked deterministically per session id
   (`CHAR_FRAMES` in `src/game/assets.ts`). Falls back to a drawn figure if the
-  sheet is missing.
+  sheet is missing. Ambient NPCs (Boss/Chef/Guard/Waiter, `src/game/npc.ts`) are
+  hand-drawn via the pixel-art skill (`pixelProps.ts`), modelled on the Kenney
+  avatar structure so they match the agents.
 - **Floors:** Kenney **"Roguelike/RPG pack"** (CC0) — vendored as
   `public/assets/rpg.png` (16px, 1px spacing, 57-col grid). Seamless indoor
   floor tiles (wood parquet / tile / stone) extracted per zone via

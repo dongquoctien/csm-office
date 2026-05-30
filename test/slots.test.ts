@@ -20,7 +20,7 @@ describe('SlotManager (station allocator)', () => {
   it('frees the old station when an agent moves cluster', () => {
     const m = new SlotManager();
     const s1 = m.take('a', 'coding', 'writing');
-    m.take('a', 'meeting', 'reading');
+    m.take('a', 'read', 'reading');
     // A new agent can now reclaim the freed writing station.
     const reclaimed = m.take('b', 'coding', 'writing');
     expect(reclaimed).toEqual(s1);
@@ -42,5 +42,19 @@ describe('SlotManager (station allocator)', () => {
     for (let i = 0; i < n + 3; i++) m.take(`agent-${i}`, 'coding', 'writing');
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
+  });
+
+  it('fans out overflowing agents so seats never coincide exactly', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const m = new SlotManager();
+    const n = stationsFor('coding', 'writing').length;
+    const seats: string[] = [];
+    for (let i = 0; i < n * 3; i++) {
+      const st = m.take(`agent-${i}`, 'coding', 'writing');
+      seats.push(`${st.seat.x},${st.seat.y}`);
+    }
+    // every placed agent ends up at a distinct seat coordinate (no exact stacking)
+    expect(new Set(seats).size).toBe(seats.length);
+    vi.restoreAllMocks();
   });
 });

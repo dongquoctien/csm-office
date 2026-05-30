@@ -10,7 +10,7 @@ characters walk between rooms as activity changes, speech bubbles show recent
 messages. It is a **read-only viewer** — it consumes csm's `/api/stream` (SSE)
 and does **not** parse `~/.claude` logs itself.
 
-![structure target](docs/art-target.jpg)
+![csm-office screenshot](docs/screenshot.png)
 
 ## How it works
 
@@ -21,12 +21,23 @@ csm agent /api/stream ──proxy(token injected)──► SSE client ──► 
                                                         Phaser OfficeScene + HUD
 ```
 
-- **3 zones** map the 9 csm activities by what the work is:
+- **4 rooms** map the 9 csm activities by what the work is, joined by a hallway:
   - **Coding** (wood) — `writing`, `running`, `searching`
-  - **Meeting / Reading** (blue) — `reading`, `browsing`, `thinking`, `spawning`
+  - **Reading** (library) — `reading`
+  - **Meeting** (blue) — `browsing`, `thinking`, `spawning`
   - **Kitchen / Break** (tile) — `idle`, `waiting`
-- Only agents that are active or touched in the last 30 min are shown.
+- The bottom-left is an ambient **outdoor park** (fountain, trees, a cat and a
+  dog romping together) — atmosphere only, no agents.
+- A slow **day/night cycle** (~6 min loop) tints the whole scene: the park goes
+  deep indigo at night while the office stays warmer with its lights on (glowing
+  windows + lamp pools). Honors `prefers-reduced-motion` (picks a fixed phase).
+- Only agents that are active or touched in the last 30 min are shown; when a
+  room's seats fill up, extra agents fan out instead of stacking.
 - Avatar appearance is deterministic per session id (stable across reconnects).
+  A coding desk's monitor lights up with scrolling binary while an agent sits at
+  it, and `reading`/`searching` agents show a book/magnifier icon overhead.
+- Ambient **NPCs** add life: a Boss at the meeting table, a Chef in the kitchen,
+  and a Guard in the coding room — each idles in place with a rotating one-liner.
 
 ## Run it
 
@@ -77,9 +88,12 @@ The only coupling is the runtime HTTP/SSE call to a running csm agent. See
 
 ## Assets
 
-Currently uses generated placeholders. To use a real pixel tileset/sprite sheet,
-drop files into `public/assets/` and fill in `src/game/assets.ts` `MANIFEST` —
-no other code changes. Record licenses in `ASSETS.md`.
+Floors, furniture and avatars use **Kenney CC0** sheets in `public/assets/`
+(`rpg.png`, `indoor.png`, `chars.png`, `city.png`). Most in-room props and the
+NPCs are hand-drawn procedurally via the **pixel-art skill** (`.claude/skills/`)
+and its `src/game/pixel/` DSL → cached textures, matched to the Kenney style. The
+loader falls back to generated placeholders if a sheet is missing, so the office
+always boots. All sources + licenses are recorded in `ASSETS.md`.
 
 ## License
 

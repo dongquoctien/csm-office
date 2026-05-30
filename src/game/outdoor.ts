@@ -12,6 +12,7 @@
 import Phaser from 'phaser';
 import { OUTDOOR, type Rect } from './zones';
 import { CITY, CITY_KEY, hasCity } from './assets';
+import { registerNightLight, resetNightLights } from './nightLights';
 
 const reduceMotion =
   typeof window !== 'undefined' &&
@@ -27,6 +28,7 @@ const PATH_EDGE = 0xb09a73;
 
 export function createOutdoor(scene: Phaser.Scene): void {
   const r: Rect = OUTDOOR;
+  resetNightLights(); // fresh registry per scene (lamps re-register below)
 
   drawLawn(scene, r);
   const fountain = { x: r.x + r.w * 0.5, y: r.y + r.h * 0.32 };
@@ -38,7 +40,8 @@ export function createOutdoor(scene: Phaser.Scene): void {
   scatterFlowers(scene, r);
   if (!reduceMotion) {
     spawnPetals(scene, r); // blossom petals drifting on the wind
-    spawnCat(scene, r); // one black cat that hops around the park
+    const cat = spawnCat(scene, r); // a black cat that hops around the park
+    spawnDog(scene, r, cat); // a brown dog that plays/chases near the cat
   }
 }
 
@@ -62,7 +65,7 @@ function drawLawn(scene: Phaser.Scene, r: Rect): void {
 function drawParkPath(scene: Phaser.Scene, r: Rect, fountain: { x: number; y: number }): void {
   const W = 22; // path half-handled via disc radius
   const pts: { x: number; y: number }[] = [
-    { x: r.x + r.w * 0.32, y: r.y - 4 }, // enters from the building door (top)
+    { x: r.x + r.w * 0.32, y: r.y + 16 }, // enters through the wall gap, stays inside the park
     { x: r.x + r.w * 0.34, y: r.y + r.h * 0.18 },
     { x: fountain.x - 70, y: fountain.y + 36 }, // sweeps past the fountain
     { x: fountain.x + 10, y: r.y + r.h * 0.62 },
@@ -75,8 +78,11 @@ function drawParkPath(scene: Phaser.Scene, r: Rect, fountain: { x: number; y: nu
   const edge = scene.add.graphics().setDepth(0.055);
   for (let i = 0; i <= n; i++) {
     const p = curve.getPoint(i / n);
-    edge.fillStyle(PATH_EDGE, 1).fillCircle(p.x, p.y, W / 2 + 2); // soft border
-    gravel.fillStyle(PATH_FILL, 1).fillCircle(p.x, p.y, W / 2); // gravel fill
+    // never paint a disc whose top would spill above the park into the building.
+    const topGuard = r.y + W / 2 + 2;
+    const py = p.y < topGuard ? topGuard : p.y;
+    edge.fillStyle(PATH_EDGE, 1).fillCircle(p.x, py, W / 2 + 2); // soft border
+    gravel.fillStyle(PATH_FILL, 1).fillCircle(p.x, py, W / 2); // gravel fill
   }
   // speckle the gravel with a few darker pebbles for texture.
   const peb = scene.add.graphics().setDepth(0.065);
@@ -238,14 +244,36 @@ function bench(scene: Phaser.Scene, x: number, y: number): void {
 }
 
 function lamp(scene: Phaser.Scene, x: number, y: number): void {
-  if (hasCity(scene)) {
-    scene.add.ellipse(x, y + 6, 14, 5, 0x000000, 0.22).setDepth(0.9 + y / 2000);
-    scene.add
-      .image(x, y, CITY_KEY, CITY.lampPost)
-      .setOrigin(0.5, 0.85)
-      .setScale(1.6)
-      .setDepth(1 + y / 2000);
-  }
+  if (!hasCity(scene)) return;
+  scene.add.ellipse(x, y + 6, 14, 5, 0x000000, 0.22).setDepth(0.9 + y / 2000);
+  scene.add
+    .image(x, y, CITY_KEY, CITY.lampPost)
+    .setOrigin(0.5, 0.85)
+    .setScale(1.6)
+    .setDepth(1 + y / 2000);
+
+  // Night glow registered with the day/night cycle (fades in after dusk):
+  //   - a warm POOL of light cast on the ground at the lamp's base,
+  //   - a soft HALO around the bulb, and a bright bulb CORE.
+  // Glows sit at depth 82 (above the day/night tint) so they punch through the
+  // dark. Created with fillAlpha 1 (isFilled=true); dayNight drives the alpha.
+  const LIGHT_DEPTH = 82;
+  const bulbY = y - 34; // lamp head sits well above the base
+  const pool = scene.add
+    .ellipse(x, y + 4, 70, 30, 0xffd9a0, 1)
+    .setBlendMode(Phaser.BlendModes.ADD)
+    .setDepth(LIGHT_DEPTH);
+  const halo = scene.add
+    .ellipse(x, bulbY, 34, 34, 0xffe6b0, 1)
+    .setBlendMode(Phaser.BlendModes.ADD)
+    .setDepth(LIGHT_DEPTH);
+  const core = scene.add
+    .ellipse(x, bulbY, 9, 9, 0xfff4d0, 1)
+    .setBlendMode(Phaser.BlendModes.ADD)
+    .setDepth(LIGHT_DEPTH + 0.01);
+  registerNightLight(pool, 0xffd9a0, 0.5);
+  registerNightLight(halo, 0xffe6b0, 0.6);
+  registerNightLight(core, 0xfff4d0, 0.9);
 }
 
 // ── Cherry-blossom (sakura) trees — pink canopy, a soft accent ───────────────
@@ -300,7 +328,7 @@ function spawnPetals(scene: Phaser.Scene, r: Rect): void {
 }
 
 // ── One black cat that hops around the park (single, charming, not a crowd) ──
-function spawnCat(scene: Phaser.Scene, r: Rect): void {
+function spawnCat(scene: Phaser.Scene, r: Rect): Phaser.GameObjects.Container {
   const cat = scene.add.container(0, 0).setDepth(2);
   const g = scene.add.graphics();
   // simple top-down black cat: body, head, ears, tail, green eyes.
@@ -339,6 +367,46 @@ function spawnCat(scene: Phaser.Scene, r: Rect): void {
   };
   cat.setPosition(r.x + r.w * 0.3, r.y + r.h * 0.7);
   scene.time.delayedCall(1500, hop);
+  return cat;
+}
+
+// ── A brown dog that romps near the cat — they "play" (the dog trots toward the
+//    cat, the cat keeps hopping away). Same hop-arc style as the cat.
+function spawnDog(scene: Phaser.Scene, r: Rect, cat: Phaser.GameObjects.Container): void {
+  const dog = scene.add.container(0, 0).setDepth(2);
+  const g = scene.add.graphics();
+  // simple top-down brown dog: longer body, head with snout, floppy ears, tail.
+  g.fillStyle(0x000000, 0.25).fillEllipse(0, 8, 22, 7); // shadow
+  g.fillStyle(0x8a5a34, 1).fillEllipse(0, 0, 20, 11); // body
+  g.fillStyle(0x9a6a3a, 1).fillCircle(9, -2, 6); // head
+  g.fillStyle(0x6f4a2a, 1).fillEllipse(13, -2, 5, 3); // snout
+  g.fillStyle(0x6f4a2a, 1).fillEllipse(6, -7, 4, 5).fillEllipse(11, -7, 4, 5); // floppy ears
+  g.fillStyle(0x8a5a34, 1).fillEllipse(-12, -3, 7, 3); // tail
+  g.fillStyle(0x1a1c2c, 1).fillCircle(10, -3, 1).fillCircle(13, -3, 1); // eyes/nose
+  dog.add(g);
+
+  let seed = 53;
+  const rnd = (): number => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const romp = (): void => {
+    // aim a bit OFFSET from the cat so the dog circles/chases rather than overlaps.
+    const off = 34 + rnd() * 24;
+    const side = rnd() < 0.5 ? -1 : 1;
+    const tx = Phaser.Math.Clamp(cat.x + side * off, r.x + 24, r.x + r.w * 0.66);
+    const ty = Phaser.Math.Clamp(cat.y + (rnd() * 30 - 15), r.y + 28, r.y + r.h - 24);
+    dog.scaleX = tx < dog.x ? -1 : 1; // face travel
+    scene.tweens.add({
+      targets: dog,
+      x: tx,
+      y: ty,
+      duration: 700 + rnd() * 450,
+      ease: 'Sine.inOut',
+      onComplete: () => scene.time.delayedCall(500 + rnd() * 1400, romp),
+    });
+    // trot bounce.
+    scene.tweens.add({ targets: g, y: -5, duration: 260, yoyo: true, ease: 'Quad.out' });
+  };
+  dog.setPosition(r.x + r.w * 0.42, r.y + r.h * 0.66);
+  scene.time.delayedCall(2200, romp);
 }
 
 // ── Sparse flower clusters (semi-random, not uniform) ────────────────────────

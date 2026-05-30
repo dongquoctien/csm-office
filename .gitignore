@@ -9,3 +9,5 @@ dist
 .playwright-mcp
 # test screenshots at repo root (real assets live under public/assets/)
 /*.png
+# Claude Code skills/config — personal tooling, extracted to its own repo
+.claude/
