@@ -1,35 +1,45 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SlotManager } from '../src/game/slots';
+import { stationsFor } from '../src/game/zones';
 
-describe('SlotManager', () => {
-  it('gives distinct slots to distinct agents in the same sub-spot', () => {
+describe('SlotManager (station allocator)', () => {
+  it('gives distinct stations to distinct agents in the same cluster', () => {
     const m = new SlotManager();
     const a = m.take('a', 'coding', 'writing');
     const b = m.take('b', 'coding', 'writing');
-    expect(a).not.toEqual(b);
+    expect(a.seat).not.toEqual(b.seat);
   });
 
-  it('keeps the same slot when an agent re-takes the same sub-spot', () => {
+  it('keeps the same station when an agent re-takes the same cluster', () => {
     const m = new SlotManager();
     const first = m.take('a', 'coding', 'writing');
     const again = m.take('a', 'coding', 'writing');
     expect(again).toEqual(first);
   });
 
-  it('frees the old slot when an agent moves sub-spot', () => {
+  it('frees the old station when an agent moves cluster', () => {
     const m = new SlotManager();
-    const slot1 = m.take('a', 'coding', 'writing');
+    const s1 = m.take('a', 'coding', 'writing');
     m.take('a', 'meeting', 'reading');
-    // A new agent can now reclaim the freed writing slot.
+    // A new agent can now reclaim the freed writing station.
     const reclaimed = m.take('b', 'coding', 'writing');
-    expect(reclaimed).toEqual(slot1);
+    expect(reclaimed).toEqual(s1);
   });
 
-  it('warns once and reuses slots on overflow instead of erroring', () => {
+  it('returns a station whose furniture/seat/facing are defined', () => {
+    const m = new SlotManager();
+    const st = m.take('a', 'kitchen', 'idle');
+    expect(st.furniture).toBeTruthy();
+    expect(st.seat).toHaveProperty('x');
+    expect(['up', 'down', 'left', 'right']).toContain(st.facing);
+  });
+
+  it('warns once and reuses stations on overflow instead of erroring', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const m = new SlotManager();
-    // coding/writing has 8 slots; place 12 → 4 overflow, one warning.
-    for (let i = 0; i < 12; i++) m.take(`agent-${i}`, 'coding', 'writing');
+    const n = stationsFor('coding', 'writing').length;
+    expect(n).toBeGreaterThan(0);
+    for (let i = 0; i < n + 3; i++) m.take(`agent-${i}`, 'coding', 'writing');
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });

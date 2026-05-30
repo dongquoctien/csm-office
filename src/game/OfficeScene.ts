@@ -1,43 +1,63 @@
 /**
- * OfficeScene — draws the 3-zone office and animates agents from store intents.
- *   spawn    → create sprite, place at slot
- *   despawn  → free slot, destroy
- *   moveRoom → walk through doorways to the new sub-spot (routing.ts)
- *   activity → swap sub-spot within the same zone (walk) or just toggle active
- *   say      → feed the bubble rotator (1 per sub-spot, rotates)
- *
- * Consumes intents only; never touches SSE. Phase 4 swaps the placeholder art
- * for a real tileset/sprite sheet via the asset manifest.
+ * OfficeScene — draws 3 top-down rooms with depth (walls w/ visible height,
+ * baked shadows, wall-anchored furniture, open centers) and animates agents from
+ * store intents. Layered draw order per the interior-design research:
+ *   floor → rug → wall-shadow → walls(top+face) → wall-mounted decor →
+ *   furniture (shadowed) → agents (y-sorted) → bubbles.
+ * Consumes intents only; never touches SSE.
  */
 import Phaser from 'phaser';
-import { ALL_ZONES, WORLD_H, WORLD_W, ZONES, subspotFor } from './zones';
-import { ensureFloor, hasIndoor, INDOOR_KEY, INDOOR_TILE, preloadAssets, PROPS } from './assets';
-import type { PropName } from './assets';
+import {
+  ALL_ZONES,
+  MEETING_TABLE,
+  WALL_FACE,
+  WORLD_H,
+  WORLD_W,
+  type Station,
+  type WallDecor,
+  type Zone,
+} from './zones';
+import {
+  ensureFloor,
+  hasIndoor,
+  INDOOR_KEY,
+  PROPS,
+  preloadAssets,
+  RPG_KEY,
+  RPG_PROPS,
+} from './assets';
 import { AgentSprite } from './AgentSprite';
 import { SlotManager } from './slots';
 import { BubbleRotator } from './bubble';
+import { ScreenLayer } from './Screen';
+import { createOutdoor } from './outdoor';
 import { routeTo } from './routing';
-import { ACTIVITY_LABEL, ZONE_LABEL, type ZoneId } from '../store/zoneMap';
+import { ZONE_LABEL, type ZoneId } from '../store/zoneMap';
 import type { Intent } from '../store/diff';
 import type { Activity } from '../api/types';
 import type { Look } from '../store/look';
 
 const FLOOR_HEX: Record<'wood' | 'tile' | 'blue', number> = {
-  wood: 0x9b6a3f,
-  tile: 0xe7e2d8,
+  wood: 0x6b4a2a,
+  tile: 0xc9c2b0,
   blue: 0x2f5d7c,
 };
-const WALL_HEX = 0x1c1c22;
+// Wall: a lighter cap on top of a darker face, plus a baseboard line.
+const WALL_CAP = 0x6f6a78;
+const WALL_FACE_HEX = 0x4a4652;
+const WALL_BASE = 0x2a2730;
 const TITLE_HEX: Record<'wood' | 'tile' | 'blue', string> = {
-  wood: '#3a2616',
-  tile: '#4a4636',
+  wood: '#f0e0c0',
+  tile: '#3a3630',
   blue: '#cfe2f0',
 };
+const FURNITURE_DEPTH_BASE = 10;
 
 interface Tracked {
   sprite: AgentSprite;
   zone: ZoneId;
   activity: Activity;
+  screenKey?: string; // the desk monitor this agent currently lights
 }
 
 export class OfficeScene extends Phaser.Scene {
@@ -45,6 +65,7 @@ export class OfficeScene extends Phaser.Scene {
   private slots = new SlotManager();
   private bubbles = new BubbleRotator();
   private agentNames = new Map<string, string>();
+  private screens!: ScreenLayer;
 
   constructor() {
     super('Office');
@@ -56,96 +77,131 @@ export class OfficeScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('#0b0b0e');
-    this.drawWorld();
-    this.drawProps();
+    createOutdoor(this); // ambient street (bottom-left of the L)
+    this.screens = new ScreenLayer(this);
+    for (const zone of ALL_ZONES) this.drawZone(zone);
     this.fitCamera();
     this.scale.on('resize', () => this.fitCamera());
     this.bubbles.start();
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.bubbles.stop());
   }
 
-  private drawWorld(): void {
-    for (const zone of ALL_ZONES) {
-      const tex = ensureFloor(this, zone.floor);
+  /** Stable key for a station's monitor screen. */
+  private stationScreenKey(st: Station): string {
+    return `scr:${Math.round(st.fx)},${Math.round(st.fy)}`;
+  }
+
+  // ── Reusable contact shadow (glues objects to the floor) ───────────────────
+  private contactShadow(x: number, y: number, w: number, depth: number): void {
+    this.add.ellipse(x, y, w, w * 0.32, 0x000000, 0.22).setDepth(depth - 0.01);
+  }
+
+  private placeProp(d: WallDecor): void {
+    const key = d.sheet === 'rpg' ? RPG_KEY : INDOOR_KEY;
+    const frame =
+      d.sheet === 'rpg'
+        ? RPG_PROPS[d.prop as keyof typeof RPG_PROPS]
+        : PROPS[d.prop as keyof typeof PROPS];
+    this.add
+      .image(d.x, d.y, key, frame)
+      .setOrigin(0.5, 0.5)
+      .setScale(d.scale ?? 2)
+      .setDepth(0.4);
+  }
+
+  private drawZone(zone: Zone): void {
+    const { rect, inner, floor } = zone;
+
+    // 1) Floor (tiled), filling the inner area.
+    const tex = ensureFloor(this, floor);
+    this.add.tileSprite(inner.x, inner.y, inner.w, inner.h, tex).setOrigin(0, 0).setDepth(0);
+    if (floor === 'blue') {
       this.add
-        .tileSprite(zone.rect.x, zone.rect.y, zone.rect.w, zone.rect.h, tex)
+        .rectangle(inner.x, inner.y, inner.w, inner.h, FLOOR_HEX.blue, 0.4)
         .setOrigin(0, 0)
-        .setAlpha(1)
-        .setDepth(0);
-      // Light tint wash to deepen each zone's identity without hiding the floor.
+        .setDepth(0.01);
+    }
+
+    // 2) Rug (defines a sub-zone), under the furniture.
+    if (zone.rug && hasIndoor(this)) {
       this.add
-        .rectangle(zone.rect.x, zone.rect.y, zone.rect.w, zone.rect.h, FLOOR_HEX[zone.floor], 0.12)
-        .setOrigin(0, 0)
-        .setDepth(0);
+        .image(zone.rug.x, zone.rug.y, INDOOR_KEY, PROPS[zone.rug.prop])
+        .setOrigin(0.5, 0.5)
+        .setScale(zone.rug.scale)
+        .setDepth(0.05);
+    }
+
+    // 3) Walls with visible height: cap band + face band + baseboard line.
+    //    Drawn as rectangles so it reads as a room, not a stroke outline.
+    const x = rect.x,
+      y = rect.y,
+      w = rect.w,
+      h = rect.h;
+    // wall-base shadow strip just inside the top wall (light from top-left).
+    this.add.rectangle(inner.x, inner.y, inner.w, 6, 0x000000, 0.12).setOrigin(0, 0).setDepth(0.2);
+    // top wall: face then cap
+    this.add.rectangle(x, y, w, WALL_FACE, WALL_FACE_HEX, 1).setOrigin(0, 0).setDepth(0.3);
+    this.add.rectangle(x, y, w, 7, WALL_CAP, 1).setOrigin(0, 0).setDepth(0.31);
+    this.add
+      .rectangle(x, y + WALL_FACE - 2, w, 2, WALL_BASE, 1)
+      .setOrigin(0, 0)
+      .setDepth(0.32);
+    // side + bottom walls: thinner caps (we see them edge-on)
+    this.add
+      .rectangle(x, y, WALL_FACE * 0.5, h, WALL_FACE_HEX, 1)
+      .setOrigin(0, 0)
+      .setDepth(0.3);
+    this.add
+      .rectangle(x + w - WALL_FACE * 0.5, y, WALL_FACE * 0.5, h, WALL_FACE_HEX, 1)
+      .setOrigin(0, 0)
+      .setDepth(0.3);
+    this.add
+      .rectangle(x, y + h - WALL_FACE * 0.5, w, WALL_FACE * 0.5, WALL_FACE_HEX, 1)
+      .setOrigin(0, 0)
+      .setDepth(0.3);
+
+    // 5) Wall-mounted decor (bookshelves, art, plants).
+    if (hasIndoor(this)) for (const d of zone.decor) this.placeProp(d);
+
+    // 4) Zone title on the wall cap — drawn AFTER decor so it stays legible.
+    this.add
+      .text(inner.x + 6, y + 4, ZONE_LABEL[zone.id].toUpperCase(), {
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: TITLE_HEX[floor],
+        backgroundColor: '#00000055',
+        padding: { x: 3, y: 1 },
+      })
+      .setDepth(0.6);
+
+    // 6) Meeting conference table (the central focal point).
+    if (zone.id === 'meeting' && hasIndoor(this)) {
+      this.contactShadow(MEETING_TABLE.x, MEETING_TABLE.y + 14, 96, 0.5);
       this.add
-        .rectangle(zone.rect.x, zone.rect.y, zone.rect.w, zone.rect.h)
-        .setOrigin(0, 0)
-        .setStrokeStyle(6, WALL_HEX, 1)
-        .setDepth(0);
-      this.add
-        .text(zone.rect.x + 14, zone.rect.y + 8, ZONE_LABEL[zone.id].toUpperCase(), {
-          fontFamily: 'monospace',
-          fontSize: '13px',
-          fontStyle: 'bold',
-          color: TITLE_HEX[zone.floor],
-        })
-        .setDepth(0.7); // above props (0.5), below avatars (1)
-      for (const ss of zone.subspots) {
-        this.add
-          .text(ss.labelX, ss.labelY, ACTIVITY_LABEL[ss.activity], {
-            fontFamily: 'monospace',
-            fontSize: '10px',
-            color: TITLE_HEX[zone.floor],
-          })
-          .setOrigin(0.5, 0)
-          .setAlpha(0.85)
-          .setDepth(0.7);
-      }
+        .image(MEETING_TABLE.x, MEETING_TABLE.y, INDOOR_KEY, PROPS.tableLong)
+        .setOrigin(0.5, 0.5)
+        .setScale(3)
+        .setDepth(0.5);
+    }
+
+    // 7) Station furniture (desks/counters/chairs), each with a contact shadow.
+    if (hasIndoor(this)) {
+      for (const st of zone.stations) this.drawStationFurniture(st);
     }
   }
 
-  /** Decorate zones with real furniture props (Kenney indoor sheet). */
-  private drawProps(): void {
-    if (!hasIndoor(this)) return; // no asset → procedural-only scene
-    const SCALE = 2; // 16px tile → 32px
-    const prop = (name: PropName, x: number, y: number, scale = SCALE): void => {
-      this.add
-        .image(x, y, INDOOR_KEY, PROPS[name])
-        .setOrigin(0.5, 0.8)
-        .setScale(scale)
-        .setDepth(0.5);
-    };
-
-    // Per-zone, per-activity decoration. Props sit just above each sub-spot's
-    // first slot row so avatars stand "at" them.
-    const deco: Record<string, PropName[]> = {
-      'coding:writing': ['deskItems', 'deskWood'],
-      'coding:running': ['deskWood', 'deskItems'],
-      'coding:searching': ['deskItems', 'deskWood'],
-      'meeting:reading': ['framedTeal', 'plant'],
-      'meeting:browsing': ['wallArtMap'],
-      'meeting:thinking': ['framedGreen', 'plant2'],
-      'meeting:spawning': ['lamp'],
-      'kitchen:idle': ['fridge', 'plant'],
-      'kitchen:waiting': ['stove', 'counter'],
-    };
-
-    for (const zone of ALL_ZONES) {
-      for (const ss of zone.subspots) {
-        const names = deco[`${zone.id}:${ss.activity}`] ?? [];
-        const topRow = ss.slots.slice(0, 4); // top row of the 4x2 slot grid
-        names.forEach((name, i) => {
-          const slot = topRow[i % topRow.length];
-          // Place the prop a bit above the slot so the avatar stands in front.
-          prop(name, slot.x, slot.y - INDOOR_TILE * SCALE * 0.5);
-        });
-      }
-      // A couple of ambient plants in each zone's corner.
-      this.add
-        .image(zone.rect.x + 22, zone.rect.y + zone.rect.h - 22, INDOOR_KEY, PROPS.plant2)
-        .setOrigin(0.5, 0.8)
-        .setScale(SCALE)
-        .setDepth(0.5);
+  private drawStationFurniture(st: Station): void {
+    const depth = FURNITURE_DEPTH_BASE + st.fy / WORLD_H;
+    this.contactShadow(st.fx, st.fy + 12, 30, depth);
+    this.add
+      .image(st.fx, st.fy, INDOOR_KEY, PROPS[st.furniture])
+      .setOrigin(0.5, 0.8)
+      .setScale(2)
+      .setDepth(depth);
+    // Coding desks get a monitor screen (lit when occupied).
+    if (st.activity === 'writing' || st.activity === 'running' || st.activity === 'searching') {
+      this.screens.add(this.stationScreenKey(st), st.fx, st.fy - 16, depth + 0.005);
     }
   }
 
@@ -187,30 +243,35 @@ export class OfficeScene extends Phaser.Scene {
     if (this.agents.has(id)) return;
     const name = this.agentNames.get(id) || id.slice(0, 8);
     const sprite = new AgentSprite(this, id, look, name, activity);
-    const slot = this.slots.take(id, zone, activity);
-    sprite.placeAt(slot.x, slot.y); // spawn instantly at the slot
+    const st = this.slots.take(id, zone, activity);
+    sprite.placeAt(st.seat.x, st.seat.y);
+    sprite.face(st.facing);
     sprite.setActive(active);
-    this.agents.set(id, { sprite, zone, activity });
+    const screenKey = this.stationScreenKey(st);
+    this.screens.setOn(screenKey, true);
+    this.agents.set(id, { sprite, zone, activity, screenKey });
     this.bubbles.setKey(id, this.key(zone, activity));
     this.bubbles.setActive(id, active);
   }
 
-  /** Move an agent to a (zone, activity) sub-spot; walk if `animate`. */
   private moveTo(id: string, zone: ZoneId, activity: Activity, animate: boolean): void {
     const t = this.agents.get(id);
     if (!t) return;
-    const slot = this.slots.take(id, zone, activity);
-    const target = subspotFor(zone, activity)
-      ? slot
-      : { x: ZONES[zone].rect.x + ZONES[zone].rect.w / 2, y: ZONES[zone].rect.y + 40 };
+    const st = this.slots.take(id, zone, activity);
+    // The old desk goes dark; the new one lights when the agent arrives.
+    if (t.screenKey) this.screens.setOn(t.screenKey, false);
+    const newKey = this.stationScreenKey(st);
     if (animate) {
-      const path = routeTo(t.zone, zone, { x: t.sprite.x, y: t.sprite.y }, target);
-      t.sprite.walkPath(path);
+      const path = routeTo(t.zone, zone, { x: t.sprite.x, y: t.sprite.y }, st.seat);
+      t.sprite.walkPath(path, st.facing);
     } else {
-      t.sprite.placeAt(target.x, target.y);
+      t.sprite.placeAt(st.seat.x, st.seat.y);
+      t.sprite.face(st.facing);
     }
+    this.screens.setOn(newKey, true);
     t.zone = zone;
     t.activity = activity;
+    t.screenKey = newKey;
     t.sprite.setActivity(activity);
     this.bubbles.setKey(id, this.key(zone, activity));
   }
@@ -220,7 +281,6 @@ export class OfficeScene extends Phaser.Scene {
     if (!t) return;
     t.sprite.setActive(active);
     this.bubbles.setActive(id, active);
-    // Same zone but the activity changed → walk to the new sub-spot.
     if (t.activity !== activity) this.moveTo(id, t.zone, activity, true);
   }
 
@@ -231,13 +291,14 @@ export class OfficeScene extends Phaser.Scene {
   }
 
   private despawn(id: string): void {
+    const t = this.agents.get(id);
+    if (t?.screenKey) this.screens.setOn(t.screenKey, false);
     this.slots.release(id);
     this.bubbles.remove(id);
-    this.agents.get(id)?.sprite.destroy();
+    t?.sprite.destroy();
     this.agents.delete(id);
   }
 
-  /** Show/hide sprites by a predicate (filters/search). */
   setFilter(match: (id: string) => boolean): void {
     for (const [id, t] of this.agents) t.sprite.setVisible(match(id));
   }

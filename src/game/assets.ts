@@ -9,51 +9,100 @@
  */
 import Phaser from 'phaser';
 
-export type FloorKey = 'wood' | 'tile' | 'blue';
+// Pure data (frame indices, keys, palettes) lives in propsData.ts so pure
+// modules + tests don't import Phaser. Re-exported here for existing call sites.
+export {
+  INDOOR_KEY,
+  INDOOR_PATH,
+  INDOOR_TILE,
+  INDOOR_SPACING,
+  CHARS_KEY,
+  CHARS_PATH,
+  CHARS_COLS,
+  RPG_KEY,
+  RPG_PATH,
+  RPG_COLS,
+  CITY_KEY,
+  CITY_PATH,
+  CITY_COLS,
+  CITY_SPACING,
+  CITY,
+  FLOOR_FRAME,
+  CHAR_FRAMES,
+  PROPS,
+  RPG_PROPS,
+} from './propsData';
+export type { FloorKey, PropName, RpgPropName } from './propsData';
 
-export const INDOOR_KEY = 'indoor';
-export const INDOOR_PATH = '/assets/indoor.png';
-export const INDOOR_TILE = 16;
-export const INDOOR_SPACING = 1;
-
-export const CHARS_KEY = 'chars';
-export const CHARS_PATH = '/assets/chars.png';
-export const CHARS_COLS = 54;
-
-/**
- * Curated "fully-dressed" character frames from Kenney roguelike-characters
- * (CC0). Picked deterministically per session id so avatars stay stable and
- * varied. These are detailed people (hair/clothing), unlike the bare base rows.
- */
-export const CHAR_FRAMES = [270, 271, 324, 325, 378, 379, 432, 433, 486, 487, 540, 541] as const;
-
-/**
- * Named prop frames in the indoor sheet (verified indices). Swapping art = point
- * these at a different sheet/frames; no scene logic changes.
- */
-export const PROPS = {
-  plant: 16,
-  plant2: 17,
-  lamp: 127,
-  deskWood: 365,
-  deskItems: 329, // desk with stuff on it (reads as a monitor desk)
-  counter: 356,
-  fridge: 241,
-  stove: 392,
-  wallArtTeal: 397,
-  wallArtMap: 398,
-  framedGreen: 451,
-  framedOrange: 452,
-  framedTeal: 453,
-} as const;
-
-export type PropName = keyof typeof PROPS;
+import {
+  CHARS_KEY,
+  CHARS_PATH,
+  CHAR_FRAMES,
+  CITY_KEY,
+  CITY_PATH,
+  CITY_SPACING,
+  FLOOR_FRAME,
+  INDOOR_KEY,
+  INDOOR_PATH,
+  INDOOR_SPACING,
+  INDOOR_TILE,
+  RPG_COLS,
+  RPG_KEY,
+  RPG_PATH,
+  type FloorKey,
+} from './propsData';
 
 /** Load real tilesheets. Called from the scene's preload(). */
 export function preloadAssets(scene: Phaser.Scene): void {
   const cfg = { frameWidth: INDOOR_TILE, frameHeight: INDOOR_TILE, spacing: INDOOR_SPACING };
   scene.load.spritesheet(INDOOR_KEY, INDOOR_PATH, cfg);
   scene.load.spritesheet(CHARS_KEY, CHARS_PATH, cfg);
+  scene.load.spritesheet(RPG_KEY, RPG_PATH, cfg);
+  // City sheet is packed (no spacing) — different frame config.
+  scene.load.spritesheet(CITY_KEY, CITY_PATH, {
+    frameWidth: INDOOR_TILE,
+    frameHeight: INDOOR_TILE,
+    spacing: CITY_SPACING,
+  });
+}
+
+export function hasRpg(scene: Phaser.Scene): boolean {
+  return scene.textures.exists(RPG_KEY);
+}
+
+export function hasCity(scene: Phaser.Scene): boolean {
+  return scene.textures.exists(CITY_KEY);
+}
+
+/**
+ * Extract a single RPG floor frame into its own gap-free texture so tileSprite
+ * can repeat it seamlessly (the source sheet has 1px spacing between tiles,
+ * which would otherwise show as seams when tiled). Cached per zone.
+ */
+function makeRpgFloorTexture(scene: Phaser.Scene, key: FloorKey): string {
+  const texKey = `floor:rpg:${key}`;
+  if (scene.textures.exists(texKey)) return texKey;
+  const frame = FLOOR_FRAME[key];
+  const col = frame % RPG_COLS;
+  const row = Math.floor(frame / RPG_COLS);
+  const src = scene.textures.get(RPG_KEY).getSourceImage() as CanvasImageSource;
+  const canvas = scene.textures.createCanvas(texKey, INDOOR_TILE, INDOOR_TILE);
+  if (!canvas) return texKey;
+  const ctx = canvas.getContext();
+  // Draw just the tile body (no spacing) into a tight 16x16 canvas.
+  ctx.drawImage(
+    src,
+    col * (INDOOR_TILE + INDOOR_SPACING),
+    row * (INDOOR_TILE + INDOOR_SPACING),
+    INDOOR_TILE,
+    INDOOR_TILE,
+    0,
+    0,
+    INDOOR_TILE,
+    INDOOR_TILE,
+  );
+  canvas.refresh();
+  return texKey;
 }
 
 export function hasIndoor(scene: Phaser.Scene): boolean {
@@ -121,5 +170,7 @@ function makeFloorTexture(scene: Phaser.Scene, key: FloorKey): string {
 }
 
 export function ensureFloor(scene: Phaser.Scene, key: FloorKey): string {
+  // Prefer the real Kenney RPG floor tile; fall back to procedural if absent.
+  if (hasRpg(scene)) return makeRpgFloorTexture(scene, key);
   return makeFloorTexture(scene, key);
 }

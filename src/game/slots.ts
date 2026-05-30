@@ -1,18 +1,17 @@
 /**
- * Slot allocator (PLAN.md §4.5, ported from the csm MVP). Assigns each agent a
- * non-overlapping slot within its activity sub-spot; round-robin reuse when a
- * sub-spot overflows, and a logged warning instead of silent stacking.
- *
- * Pure bookkeeping — no Phaser. Keyed by `${zone}:${activity}`.
+ * Station allocator (ported from the csm MVP slot system). Assigns each agent a
+ * non-overlapping wall-anchored station within its activity cluster; round-robin
+ * reuse when a cluster overflows, with a logged warning instead of silent
+ * stacking. Pure bookkeeping — no Phaser. Keyed by `${zone}:${activity}`.
  */
 import type { Activity } from '../api/types';
-import type { Slot } from './zones';
-import { subspotFor } from './zones';
+import type { Station } from './zones';
+import { stationsFor } from './zones';
 import type { ZoneId } from '../store/zoneMap';
 
 interface Pool {
-  slots: Slot[];
-  /** agent id occupying each slot index (or null). */
+  stations: Station[];
+  /** agent id occupying each station index (or null). */
   occupants: (string | null)[];
   /** round-robin cursor for overflow reuse. */
   cursor: number;
@@ -20,7 +19,7 @@ interface Pool {
 
 export class SlotManager {
   private pools = new Map<string, Pool>();
-  private placement = new Map<string, string>(); // agentId -> poolKey:index
+  private placement = new Map<string, string>(); // agentId -> poolKey#index
   private overflowed = new Set<string>();
 
   private key(zone: ZoneId, activity: Activity): string {
@@ -31,15 +30,26 @@ export class SlotManager {
     const k = this.key(zone, activity);
     let p = this.pools.get(k);
     if (!p) {
-      const ss = subspotFor(zone, activity);
-      const slots = ss ? ss.slots : [{ x: 0, y: 0 }];
-      p = { slots, occupants: slots.map(() => null), cursor: 0 };
+      const stations = stationsFor(zone, activity);
+      const list: Station[] = stations.length
+        ? stations
+        : [
+            {
+              activity,
+              furniture: 'deskItems',
+              fx: 0,
+              fy: 0,
+              seat: { x: 0, y: 0 },
+              facing: 'up',
+            },
+          ];
+      p = { stations: list, occupants: list.map(() => null), cursor: 0 };
       this.pools.set(k, p);
     }
     return p;
   }
 
-  /** Release any slot the agent currently holds. */
+  /** Release any station the agent currently holds. */
   release(agentId: string): void {
     const placed = this.placement.get(agentId);
     if (!placed) return;
@@ -51,35 +61,33 @@ export class SlotManager {
   }
 
   /**
-   * Place an agent in a free slot of its (zone, activity) sub-spot. If the agent
-   * already holds a slot in a different pool, it is released first. Returns the
-   * slot coordinates.
+   * Place an agent at a free station of its (zone, activity) cluster. If it
+   * already holds a station in a different pool, that one is released first.
+   * Returns the chosen station (seat point + facing + furniture).
    */
-  take(agentId: string, zone: ZoneId, activity: Activity): Slot {
+  take(agentId: string, zone: ZoneId, activity: Activity): Station {
     const targetKey = this.key(zone, activity);
     const current = this.placement.get(agentId);
     if (current && !current.startsWith(targetKey + '#')) this.release(agentId);
     else if (current) {
-      // Already in the right pool — keep the same slot (stable position).
       const [k, idxStr] = current.split('#');
-      return this.pools.get(k)!.slots[Number(idxStr)];
+      return this.pools.get(k)!.stations[Number(idxStr)];
     }
 
     const p = this.pool(zone, activity);
     let idx = p.occupants.indexOf(null);
     if (idx === -1) {
-      // Overflow: reuse round-robin (stacking) and log once per pool.
-      idx = p.cursor % p.slots.length;
+      idx = p.cursor % p.stations.length;
       p.cursor++;
       if (!this.overflowed.has(targetKey)) {
         this.overflowed.add(targetKey);
         console.warn(
-          `[slots] ${targetKey} overflowed (${p.slots.length} slots); agents will stack.`,
+          `[slots] ${targetKey} overflowed (${p.stations.length} stations); agents will stack.`,
         );
       }
     }
     p.occupants[idx] = agentId;
     this.placement.set(agentId, `${targetKey}#${idx}`);
-    return p.slots[idx];
+    return p.stations[idx];
   }
 }
